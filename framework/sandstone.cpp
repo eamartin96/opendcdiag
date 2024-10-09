@@ -2160,9 +2160,13 @@ static TestResult run_one_test_once(const struct test *test)
         (void) missing;
 
         children.results.emplace_back(ChildExitStatus{ TestResult::Skipped });
-    } else {
+    } else if (test->quality_level >= 0 && test->quality_level < sApp->requested_quality) {
+        init_per_thread_data();
+        log_skip(TestResourceIssueSkipCategory, "Test %s is in BETA quality, try again using --beta option", test->id);
+        children.results.emplace_back(ChildExitStatus{ TestResult::Skipped });
+    } else if (test->quality_level >= sApp->requested_quality) {
         run_one_test_children(children, test);
-    }
+    } 
 
     // print results and find out if the test failed
     TestResult testResult = logging_print_results(children.results, test);
@@ -2556,9 +2560,10 @@ static SandstoneTestSet::EnabledTestList::iterator get_first_test()
 {
     logging_print_iteration_start();
     auto it = test_set->begin();
-    while (it != test_set->end() && it->test->quality_level < sApp->requested_quality)
+    if (it != test_set->end() && it->test->quality_level < 0 && it->test->quality_level < sApp->requested_quality)
         ++it;
-    return it;
+    else
+        return it;
 }
 
 
@@ -2569,20 +2574,22 @@ get_next_test(SandstoneTestSet::EnabledTestList::iterator next_test)
         return test_set->end();
 
     ++next_test;
-    while (next_test != test_set->end() && next_test->test->quality_level < sApp->requested_quality)
+    if (next_test != test_set->end() && next_test->test->quality_level < sApp->requested_quality)
         ++next_test;
-    if (next_test == test_set->end()) {
-        if (should_start_next_iteration()) {
-            return get_first_test();
-        } else {
-            return test_set->end();
+    else {
+        if (next_test == test_set->end()) {
+            if (should_start_next_iteration()) {
+                return get_first_test();
+            } else {
+                return test_set->end();
+            }
         }
-    }
 
-    assert(next_test->test->id);
-    assert(next_test->test->description);
-    assert(strlen(next_test->test->id));
-    return next_test;
+        assert(next_test->test->id);
+        assert(next_test->test->description);
+        assert(strlen(next_test->test->id));
+        return next_test;
+    }
 }
 
 static bool wait_delay_between_tests()
